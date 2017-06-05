@@ -22,6 +22,7 @@ long current_time;
 
 unsigned int max_write_time = 0, max_read_time = 0;
 unsigned int min_write_time = 0xffffffff, min_read_time=0xffffffff;
+long long total_sector_write, total_sector_read;
 
 long test_file_max_sector;
 long test_file_sector;		// sector unit
@@ -79,6 +80,9 @@ void init_global_var(void)
 	sprintf(test_file_name, "%s", TEST_FILE_NAME);
 
 	memset(test_chunk_sector, 0x0, sizeof(test_chunk_sector));
+	
+	total_sector_write = 0;
+	total_sector_read = 0;
 
 	DBGMSG("Hostname: %s\n", controlling_host_name);
 	DBGMSG("Pagesize: %d\n", page_size);
@@ -103,6 +107,8 @@ void dump_test_info(void)
 	printf("Summay of write status:\n");
 	printf("\tWrite response time max: %d ns, min: %d ns\n", max_write_time, min_write_time);
 	printf("\tRead response time max: %d ns, min: %d ns\n", max_read_time, min_read_time);
+	printf("\tTotal sector write: %lld\n", total_sector_write);
+	printf("\tTotal sector read: %lld\n", total_sector_read);
 }
 
 void dump_excel(char *name)
@@ -118,14 +124,14 @@ void dump_excel(char *name)
 		return;
 	}
 
-	sprintf(buff, "write(MB/S),");
+	sprintf(buff, "%dK_write,", test_chunk_sector[0]);
 	bytes_write = write(fd, buff, strlen(buff));
 	for(i=0; i<sizeof(w_speed)/sizeof(float); i++){
 		sprintf(buff, "%f,", w_speed[i]);
 		bytes_write = write(fd, buff, strlen(buff));
 	}
 
-	sprintf(buff, "\nread(MB/S),");
+	sprintf(buff, "\n%dK_read,", test_chunk_sector[0]);
 	bytes_write = write(fd, buff, strlen(buff));
 	for(i=0; i<sizeof(r_speed)/sizeof(float); i++){
 		sprintf(buff, "%f,", r_speed[i]);
@@ -329,6 +335,8 @@ int burnin_sequence_write(int type)
 				min_write_time = tmp;
 			}
 			w_time_sum += tmp;
+			
+			total_sector_write += w_length_sector;
 		}else{
 			
 			gettimeofday(&start_timestamp, NULL);
@@ -357,6 +365,8 @@ int burnin_sequence_write(int type)
 				min_read_time = tmp;
 			}
 			w_time_sum += tmp;
+			
+			total_sector_read += w_length_sector;
 			
 			for(i=0; i<w_length_sector; i++){
 				status = check_buffer_pattern(r_buffer+SECTOR_SIZE*i, SECTOR_SIZE/4, data_pattern[i+w_pos_sector]);
@@ -518,6 +528,9 @@ int burnin_infinited_write_addr(int type)
 				min_write_time = tmp;
 			}
 			w_time_sum += tmp;
+			
+			total_sector_write += w_length_sector;
+			
 		}else if((operation&0x01) == 0){
 			if(w_random_count < test_file_sector/test_chunk_sector[0]){
 				w_random_count++;
@@ -574,6 +587,8 @@ int burnin_infinited_write_addr(int type)
 					min_write_time = tmp;
 				}
 				w_time_sum += tmp;
+				
+				total_sector_write += w_length_sector;
 			}else{
 				printf("Random write reach end\n");
 				w_pos_sector = test_file_sector;
@@ -608,6 +623,8 @@ int burnin_infinited_write_addr(int type)
 				min_read_time = tmp;
 			}
 			w_time_sum += tmp;
+			
+			total_sector_read += w_length_sector;
 			
 			for(i=0; i<w_length_sector; i++){
 				status = check_buffer_pattern(r_buffer+SECTOR_SIZE*i, SECTOR_SIZE/4, data_pattern[i+w_pos_sector]);
@@ -773,6 +790,8 @@ int burnin_infinited_read_addr(int type)
 				min_write_time = tmp;
 			}
 			w_time_sum += tmp;
+			
+			total_sector_write += w_length_sector;
 		}else if((operation&0x01) == 0){
 			if(w_random_count < test_file_sector/test_chunk_sector[0]){
 				w_random_count++;
@@ -809,6 +828,8 @@ int burnin_infinited_read_addr(int type)
 				tmp = start_timestamp.tv_sec * 1000000 +  start_timestamp.tv_usec;
 				tmp = end_timestamp.tv_sec * 1000000 + end_timestamp.tv_usec - tmp;
 				w_time_sum += tmp;
+				
+				total_sector_read += w_length_sector;
 
 				for(i=0; i<w_length_sector; i++){
 					status = check_buffer_pattern(r_buffer+SECTOR_SIZE*i, SECTOR_SIZE/4, data_pattern[i+w_pos_sector]);
@@ -851,6 +872,8 @@ int burnin_infinited_read_addr(int type)
 				min_read_time = tmp;
 			}
 			w_time_sum += tmp;
+			
+			total_sector_read += w_length_sector;
 			
 			for(i=0; i<w_length_sector; i++){
 				status = check_buffer_pattern(r_buffer+SECTOR_SIZE*i, SECTOR_SIZE/4, data_pattern[i+w_pos_sector]);
@@ -1016,6 +1039,9 @@ int burnin_random_write(int type)
 				min_write_time = tmp;
 			}
 			w_time_sum += tmp;
+			
+			total_sector_write += w_length_sector;
+			
 		}else if((operation&0x01) == 0){
 			if(w_random_count < test_file_sector/test_chunk_sector[0]){
 				w_random_count++;
@@ -1069,6 +1095,8 @@ int burnin_random_write(int type)
 					min_write_time = tmp;
 				}
 				w_time_sum += tmp;
+				
+				total_sector_write += w_length_sector;
 			}else{
 				printf("Random write reach end\n");
 				w_pos_sector = test_file_sector;
@@ -1103,6 +1131,8 @@ int burnin_random_write(int type)
 				min_read_time = tmp;
 			}
 			w_time_sum += tmp;
+			
+			total_sector_read += w_length_sector;
 			
 			for(i=0; i<w_length_sector; i++){
 				status = check_buffer_pattern(r_buffer+SECTOR_SIZE*i, SECTOR_SIZE/4, data_pattern[i+w_pos_sector]);
