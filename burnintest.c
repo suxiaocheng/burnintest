@@ -37,7 +37,12 @@ char test_file_name[128];
 /* test result used */
 char test_result_name[128];
 float w_speed[100];
+unsigned int w_speed_unit[100];
 float r_speed[100];
+unsigned int r_speed_unit[100];
+
+
+const char *speed_unit_str_list[] = {"KB", "MB", "GB", "TB"};
 
 #ifdef DEBUG
 #define DBGMSG(fmt,...)	printf(fmt, ##__VA_ARGS__)
@@ -114,9 +119,12 @@ void dump_test_info(void)
 void dump_excel(char *name)
 {
 	int i, j;
-	int fd = open(name, O_CREAT|O_RDWR, S_IRWXU);
-	char buff[256];
+	int fd = open(name, O_CREAT|O_RDWR|O_TRUNC, S_IRWXU);
+	char buff[512];
 	ssize_t bytes_write;
+	int max_unit;
+	int read_unit;
+	int write_unit;
 
 	if(fd == -1){
 		printf("Open %s file fail\n", name);
@@ -124,19 +132,56 @@ void dump_excel(char *name)
 		return;
 	}
 
-	sprintf(buff, "%dK_write,", test_chunk_sector[0]);
+	max_unit = 0;
+	for(i=0; i<sizeof(w_speed)/sizeof(float); i++){
+		//__assert(w_speed_unit[i] <=3);
+		if(w_speed_unit[i] > max_unit){
+			max_unit = w_speed_unit[i];
+		}
+	}
+	for(i=0; i<sizeof(w_speed)/sizeof(float); i++){
+		while(w_speed_unit[i] < max_unit){
+			w_speed_unit[i]++;
+			w_speed[i] /= 1024;
+		}
+	}
+	write_unit = max_unit;
+
+	max_unit = 0;
+	for(i=0; i<sizeof(r_speed)/sizeof(float); i++){
+		//__assert(r_speed_unit[i] <= 3);
+		if(r_speed_unit[i] > max_unit){
+			max_unit = r_speed_unit[i];
+		}
+	}
+	for(i=0; i<sizeof(r_speed)/sizeof(float); i++){
+		while(r_speed_unit[i] < max_unit){
+			r_speed_unit[i]++;
+			r_speed[i] /= 1024;
+		}
+	}
+	read_unit = max_unit;
+
+	sprintf(buff, "%ldK write(%s)\n", test_chunk_sector[0], speed_unit_str_list[write_unit]);
+	bytes_write = write(fd, buff, strlen(buff));
+	sprintf(buff, "%ldK,", test_chunk_sector[0]);	
 	bytes_write = write(fd, buff, strlen(buff));
 	for(i=0; i<sizeof(w_speed)/sizeof(float); i++){
 		sprintf(buff, "%f,", w_speed[i]);
 		bytes_write = write(fd, buff, strlen(buff));
 	}
 
-	sprintf(buff, "\n%dK_read,", test_chunk_sector[0]);
+	sprintf(buff, "\n%ldK read(%s)\n", test_chunk_sector[0], speed_unit_str_list[read_unit]);
+	bytes_write = write(fd, buff, strlen(buff));
+	sprintf(buff, "%ldK,", test_chunk_sector[0]);
 	bytes_write = write(fd, buff, strlen(buff));
 	for(i=0; i<sizeof(r_speed)/sizeof(float); i++){
 		sprintf(buff, "%f,", r_speed[i]);
 		bytes_write = write(fd, buff, strlen(buff));
 	}
+
+	sprintf(buff, "\n");
+	bytes_write = write(fd, buff, strlen(buff));
 
 	close(fd);
 }
@@ -219,6 +264,21 @@ int check_buffer_pattern(void *address, unsigned int len, unsigned int pattern)
 		}
 	}
 	return 0;
+}
+
+unsigned int get_speed(int *speed, unsigned long size_sector, unsigned long time_ms)
+{
+	unsigned int unit = 0;	
+	*speed = size_sector*100*1000000/2/time_ms;
+	do{		
+		if(*speed/100 < 1024){			
+			break;
+		}
+		*speed /= 1024;
+		unit++;
+	}while(unit<3);
+
+	return unit;
 }
 
 int burnin_sequence_write(int type)
@@ -383,16 +443,21 @@ int burnin_sequence_write(int type)
 
 		complete_percent = w_pos_sector*100/test_file_sector;
 		if(complete_percent != last_complete_percent){
+			unsigned int speed_unit = 0;
+			float speed;
 			last_complete_percent = complete_percent;
-			tmp = w_sector_sum * 1000000 * 100 / w_time_sum / 2 / 1024;
-			printf("%s %d complete, %d.%d MB/s, elapse time(s): %ld\n", 
+
+			speed_unit = get_speed(&tmp, w_sector_sum, w_time_sum);			
+			printf("%s %d complete, %d.%d %s/s, elapse time(s): %ld\n", 
 				((operation&0x1)==0)?"write":"read", last_complete_percent, 
-				tmp/100, tmp % 100, current_time-startup_time);
+				tmp/100, tmp % 100, speed_unit_str_list[speed_unit], current_time-startup_time);
 
 			if(operation == 0){
 				w_speed[complete_percent] = tmp/100.;
+				w_speed_unit[complete_percent] = speed_unit;
 			}else if(operation == 1){
 				r_speed[complete_percent] = tmp/100.;
+				r_speed_unit[complete_percent] = speed_unit;
 			}
 		}
 	}
@@ -645,16 +710,21 @@ int burnin_infinited_write_addr(int type)
 			complete_percent = w_random_count * 100 / (test_file_sector/test_chunk_sector[0]);
 		}
 		if(complete_percent != last_complete_percent){
+			unsigned int speed_unit = 0;
+			float speed;
 			last_complete_percent = complete_percent;
-			tmp = w_sector_sum * 1000000 * 100 / w_time_sum / 2 / 1024;
-			printf("%s %d complete, %d.%d MB/s, elapse time(s): %ld\n", 
+
+			speed_unit = get_speed(&tmp, w_sector_sum, w_time_sum);			
+			printf("%s %d complete, %d.%d %s/s, elapse time(s): %ld\n", 
 				((operation&0x1)==0)?"write":"read", last_complete_percent, 
-				tmp/100, tmp % 100, current_time-startup_time);
+				tmp/100, tmp % 100, speed_unit_str_list[speed_unit], current_time-startup_time);
 
 			if(operation == 0){
 				w_speed[complete_percent] = tmp/100.;
+				w_speed_unit[complete_percent] = speed_unit;
 			}else if(operation == 1){
 				r_speed[complete_percent] = tmp/100.;
+				r_speed_unit[complete_percent] = speed_unit;
 			}
 		}
 	}
@@ -895,17 +965,23 @@ int burnin_infinited_read_addr(int type)
 		}
 		if(complete_percent != last_complete_percent){
 			last_complete_percent = complete_percent;
-			if(w_time_sum){
-				tmp = w_sector_sum * 1000000 * 100 / w_time_sum / 2 / 1024;
-				printf("%s %d complete, %d.%d MB/s, elapse time(s): %ld\n", 
+			if(w_time_sum){				
+				unsigned int speed_unit = 0;
+				float speed;
+				last_complete_percent = complete_percent;
+
+				speed_unit = get_speed(&tmp, w_sector_sum, w_time_sum);			
+				printf("%s %d complete, %d.%d %s/s, elapse time(s): %ld\n", 
 					((operation&0x1)==0)?"write":"read", last_complete_percent, 
-					tmp/100, tmp % 100, current_time-startup_time);
+					tmp/100, tmp % 100, speed_unit_str_list[speed_unit], current_time-startup_time);
 
 				if(operation == 0){
 					w_speed[complete_percent] = tmp/100.;
+					w_speed_unit[complete_percent] = speed_unit;
 				}else if(operation == 1){
 					r_speed[complete_percent] = tmp/100.;
-				}
+					r_speed_unit[complete_percent] = speed_unit;
+				}				
 			}
 		}
 	}
@@ -1153,16 +1229,21 @@ int burnin_random_write(int type)
 			complete_percent = w_random_count * 100 / (test_file_sector/test_chunk_sector[0]);
 		}
 		if(complete_percent != last_complete_percent){
+			unsigned int speed_unit = 0;
+			float speed;
 			last_complete_percent = complete_percent;
-			tmp = w_sector_sum * 1000000 * 100 / w_time_sum / 2 / 1024;
-			printf("%s %d complete, %d.%d MB/s, elapse time(s): %ld\n", 
+
+			speed_unit = get_speed(&tmp, w_sector_sum, w_time_sum);			
+			printf("%s %d complete, %d.%d %s/s, elapse time(s): %ld\n", 
 				((operation&0x1)==0)?"write":"read", last_complete_percent, 
-				tmp/100, tmp % 100, current_time-startup_time);
+				tmp/100, tmp % 100, speed_unit_str_list[speed_unit], current_time-startup_time);
 
 			if(operation == 0){
 				w_speed[complete_percent] = tmp/100.;
+				w_speed_unit[complete_percent] = speed_unit;
 			}else if(operation == 1){
 				r_speed[complete_percent] = tmp/100.;
+				r_speed_unit[complete_percent] = speed_unit;
 			}
 		}
 	}
