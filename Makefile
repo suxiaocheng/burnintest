@@ -1,5 +1,5 @@
 
-CC	= cc
+#CC	= cc
 #C89	= c89
 #GCC	= gcc
 #CCS	= /usr/ccs/bin/cc
