@@ -29,6 +29,7 @@ long test_file_sector;		// sector unit
 int test_chunk_count = 0;
 long test_chunk_sector[32];	// sector unit
 int test_case;
+unsigned int test_random_write_align;
 int test_file_open_flag = O_RDWR|O_SYNC|O_DIRECT|O_CREAT;
 //int test_file_open_flag = O_RDWR|O_SYNC|O_CREAT;
 
@@ -88,6 +89,8 @@ void init_global_var(void)
 	
 	total_sector_write = 0;
 	total_sector_read = 0;
+
+	test_random_write_align = 0;
 
 	DBGMSG("Hostname: %s\n", controlling_host_name);
 	DBGMSG("Pagesize: %d\n", page_size);
@@ -205,7 +208,7 @@ int usage(void)
 {
 	const char *help[] = {
 		"./burnintest [-f file_size][-c chunk_size][-t test_type]",
-		"	      [-d enabled][-s enabled][-t time][-h]",
+		"	      [-d 0/1][-s 0/1][-t time][-a 0/1][-h]",
 		"	-f set the test file size, default 90% of free space",
 		"	-c set one shot write size, default 4K size",
 		"	-t set test type, 0: infinite sequence write full disk test",
@@ -213,10 +216,12 @@ int usage(void)
 		"			  2: infinite write one address test",
 		"			  3: infinite read one address test",
 		"			  4: dump sequence write speed",
-		"	-d direct io operation, default enable",
-		"	-s sync operation, default enable",
+		"	-d direct io operation, default enable(1)",
+		"	-s sync operation, default enable(1)",
 		"	-l last test time, default 1h",
+		"	-a 1: random write align to chunk size, default 0 not align"
 		"	-h print help information"
+		"eg: ./burnintest -f 1G -c 16K -t 1 -d 1 -s 1 -t 36H -a 1"
 	};
 
 	int i;
@@ -1143,6 +1148,9 @@ int burnin_random_write(int type)
 			if(w_random_count < test_file_sector/test_chunk_sector[0]){
 				w_random_count++;
 				w_pos_sector = (unsigned long)(rand()*rand()) % (test_file_sector-test_chunk_sector[0]);
+				if(test_random_write_align){
+					w_pos_sector &= ~(test_chunk_sector[0]-1);
+				}
 				w_length_sector = test_chunk_sector[0];
 
 				//DBGMSG("Write %ld, len %d\n", w_pos_sector, w_length_sector);
@@ -1372,6 +1380,15 @@ int main(int argc, char **argv)
 				test_file_open_flag &= ~O_SYNC;
 			}
 			DBGMSG("Sync: %s\n", (test_file_open_flag & O_SYNC)?"Enable":"Disable");
+			break;
+
+			case 'a':
+			enable = atoi(optarg);
+			if(enable){
+				test_random_write_align = 1;
+			}else{
+				test_random_write_align = 0;
+			}
 			break;
 			
 			case 'h':
