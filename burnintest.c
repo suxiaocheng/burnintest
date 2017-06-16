@@ -65,6 +65,10 @@ typedef int (*test_function_t)(void);
 #define FUNCTION_PARAMETER_ERROR		0x1
 #define FUNCTION_FILE_OP_ERROR			0x2
 #define FUNCTION_INTERRUPT_ERROR		0x3
+#define FUNCTION_MALLOC_ERROR		0x4
+#define FUNCTION_COMPARE_ERROR		0x5
+
+
 
 void init_global_var(void)
 {
@@ -189,17 +193,24 @@ void dump_excel(char *name)
 	close(fd);
 }
 
+int del_test_file(void)
+{
+	int err;
+	err = unlink(test_file_name);
+	if(err == -1){
+		DUMP_ERR_INFO();
+	}
+
+	return err;
+}
+
 sighandler_t signal_handler(void)
 {
 	int err;
 	printf("Receive interrupt or term signal\n");
 
 	dump_test_info();
-
-	err = unlink(test_file_name);
-	if(err == -1){
-		DUMP_ERR_INFO();
-	}
+	
 	_exit(FUNCTION_INTERRUPT_ERROR);
 	return NULL;
 }
@@ -221,6 +232,7 @@ int usage(void)
 		"	-l last test time, default 1h",
 		"	-a 1: random write align to chunk size, default 0 not align"
 		"	-h print help information"
+		"	-v verify the previous write file"
 		"eg: ./burnintest -f 1G -c 16K -t 1 -d 1 -s 1 -t 36H -a 1"
 	};
 
@@ -290,6 +302,88 @@ unsigned int get_speed(float *speed, unsigned long size_sector, unsigned long ti
 	return unit;
 #endif
 }
+
+int burnin_verify_file(void)
+{
+	unsigned char *w_buffer, *r_buffer;
+	unsigned long w_pos_sector = 0;
+	unsigned char last_complete_percent = -1;
+	unsigned char complete_percent = 0;
+	int fd = open(test_file_name, O_RDONLY);
+	unsigned int w_length_sector;
+	unsigned int operation = 0;
+	unsigned int tmp;
+	unsigned int ret = 0;
+	struct stat stat_buf;
+	unsigned long file_size;
+	unsigned int i;
+
+	if(fd == -1){
+		printf("Open %s fail\n", test_file_name);
+		DUMP_ERR_INFO();
+		_exit(FUNCTION_FILE_OP_ERROR);
+	}
+
+	w_buffer = (unsigned char *)memalign(512, test_chunk_sector[0]*SECTOR_SIZE);
+	r_buffer = (unsigned char *)memalign(512, test_chunk_sector[0]*SECTOR_SIZE);
+	if((w_buffer == NULL) || (r_buffer == NULL)){		
+		printf("malloc read/write buffer fail\n");
+		ret = 1;
+		goto MALLOC_EXIT;
+	}
+
+	ret = fstat(fd, &stat_buf);
+	if(ret == -1){
+		printf("fstat %s fail\n", test_file_name);
+		DUMP_ERR_INFO();
+		goto FSTAT_EXIT;
+	}
+
+	file_size = stat_buf.st_size/SECTOR_SIZE;
+	w_length_sector = test_chunk_sector[0];
+	printf("%s file size is 0x%x sector\n", test_file_name, file_size);
+	for(w_pos_sector=0; w_pos_sector<file_size; ){
+		if((w_pos_sector+w_length_sector) > file_size){
+			w_length_sector = file_size - w_pos_sector;
+			if(w_length_sector == 0){
+				break;
+			}
+		}
+
+		ret = read(fd, r_buffer, w_length_sector*SECTOR_SIZE);
+		if(ret == -1){
+			printf("Read file error\n");
+			DUMP_ERR_INFO();
+			_exit(FUNCTION_FILE_OP_ERROR);
+		}
+		if(ret < w_length_sector*SECTOR_SIZE){
+			printf("Read length less than excepted, read %d bytes, except: %d\n", 
+				ret, w_length_sector * SECTOR_SIZE);
+			DUMP_ERR_INFO();
+			_exit(FUNCTION_FILE_OP_ERROR);
+		}
+		
+		for(i=0; i<w_length_sector; i++){
+			ret = check_buffer_pattern(r_buffer+SECTOR_SIZE*i, SECTOR_SIZE/4, *(unsigned int *)(r_buffer+SECTOR_SIZE*i));
+			if(ret != 0){
+				printf("Fail address: 0x%x\n", w_pos_sector);
+				/* data verify fail */
+				goto BURNIN_QUIT;
+			}
+		}
+
+		w_pos_sector += w_length_sector;
+	}
+	
+BURNIN_QUIT:
+FSTAT_EXIT:
+MALLOC_EXIT:
+	free(w_buffer);
+	free(r_buffer);
+	close(fd);
+	return ret;
+}
+
 
 int burnin_sequence_write(int type)
 {
@@ -441,6 +535,7 @@ int burnin_sequence_write(int type)
 			for(i=0; i<w_length_sector; i++){
 				status = check_buffer_pattern(r_buffer+SECTOR_SIZE*i, SECTOR_SIZE/4, data_pattern[i+w_pos_sector]);
 				if(status != 0){
+					printf("Fail address: 0x%x\n", w_pos_sector);
 					/* data verify fail */
 					goto BURNIN_QUIT;
 				}
@@ -709,6 +804,7 @@ int burnin_infinited_write_addr(int type)
 			for(i=0; i<w_length_sector; i++){
 				status = check_buffer_pattern(r_buffer+SECTOR_SIZE*i, SECTOR_SIZE/4, data_pattern[i+w_pos_sector]);
 				if(status != 0){
+					printf("Fail address: 0x%x\n", w_pos_sector);
 					/* data verify fail */
 					goto BURNIN_QUIT;
 				}
@@ -924,6 +1020,7 @@ int burnin_infinited_read_addr(int type)
 				for(i=0; i<w_length_sector; i++){
 					status = check_buffer_pattern(r_buffer+SECTOR_SIZE*i, SECTOR_SIZE/4, data_pattern[i+w_pos_sector]);
 					if(status != 0){
+						printf("Fail address: 0x%x\n", w_pos_sector);
 						/* data verify fail */
 						goto BURNIN_QUIT;
 					}
@@ -968,6 +1065,7 @@ int burnin_infinited_read_addr(int type)
 			for(i=0; i<w_length_sector; i++){
 				status = check_buffer_pattern(r_buffer+SECTOR_SIZE*i, SECTOR_SIZE/4, data_pattern[i+w_pos_sector]);
 				if(status != 0){
+					printf("Fail address: 0x%x\n", w_pos_sector);
 					/* data verify fail */
 					goto BURNIN_QUIT;
 				}
@@ -1242,6 +1340,7 @@ int burnin_random_write(int type)
 			for(i=0; i<w_length_sector; i++){
 				status = check_buffer_pattern(r_buffer+SECTOR_SIZE*i, SECTOR_SIZE/4, data_pattern[i+w_pos_sector]);
 				if(status != 0){
+					printf("Fail address: 0x%x\n", w_pos_sector);
 					/* data verify fail */
 					goto BURNIN_QUIT;
 				}
@@ -1308,7 +1407,7 @@ int main(int argc, char **argv)
     	signal((int) SIGTERM, (sighandler_t) signal_handler);	/* handle kill from shell */
 	
 	// get test param or default
-	while((cret = getopt(argc,argv,"f:c:t:d:s:l:h")) != EOF){
+	while((cret = getopt(argc,argv,"f:c:t:d:s:l:hv")) != EOF){
 		switch(cret){
 			case 'f':
 			test_file_sector = atol(optarg);
@@ -1390,6 +1489,11 @@ int main(int argc, char **argv)
 				test_random_write_align = 0;
 			}
 			break;
+
+			case 'v':
+			burnin_verify_file();
+			_exit(FUNCTION_COMPARE_ERROR);
+			break;
 			
 			case 'h':
 			case '?':
@@ -1399,6 +1503,7 @@ int main(int argc, char **argv)
 			break;
 		}
 	}
+	del_test_file();
 
 	/* parameter verify */
 	if(test_chunk_count == 0){
@@ -1443,11 +1548,7 @@ int main(int argc, char **argv)
 		break;
 	}
 #endif
-	dump_test_info();
-	err = unlink(test_file_name);
-	if(err == -1){
-		DUMP_ERR_INFO();
-	}
+	dump_test_info();	
 
 	return 0;
 }
