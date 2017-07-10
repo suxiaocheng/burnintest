@@ -1,5 +1,5 @@
 
-#CC	= cc
+CC	= arm-linux-gnueabi-gcc
 #C89	= c89
 #GCC	= gcc
 #CCS	= /usr/ccs/bin/cc
@@ -8,6 +8,7 @@ CFLAGS	=
 S10GCCFLAGS    = -m64
 S10CCFLAGS     = -m64
 FLAG64BIT      = -m64
+LDFLAGS	= -static
 
 burnintest:burnintest.c
 	$(CC) -DDEBUG -O3 -g $(LDFLAGS) $< -o $@

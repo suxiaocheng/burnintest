@@ -230,9 +230,9 @@ int usage(void)
 		"	-d direct io operation, default enable(1)",
 		"	-s sync operation, default enable(1)",
 		"	-l last test time, default 1h",
-		"	-a 1: random write align to chunk size, default 0 not align"
-		"	-h print help information"
-		"	-v verify the previous write file"
+		"	-a 1: random write align to chunk size, default 0 not align",
+		"	-h print help information",
+		"	-v verify the previous write file",
 		"eg: ./burnintest -f 1G -c 16K -t 1 -d 1 -s 1 -t 36H -a 1"
 	};
 
