@@ -8,6 +8,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <malloc.h>
 
 #define __USE_GNU 1
 #include <fcntl.h>
@@ -227,6 +228,8 @@ int usage(void)
 		"			  2: infinite write one address test",
 		"			  3: infinite read one address test",
 		"			  4: dump sequence write speed",
+		"			  5: infinite sequence write, without verify",
+		"			  6: first write, and infinite sequence read",
 		"	-d direct io operation, default enable(1)",
 		"	-s sync operation, default enable(1)",
 		"	-l last test time, default 1h",
@@ -305,7 +308,7 @@ unsigned int get_speed(float *speed, unsigned long size_sector, unsigned long ti
 
 int burnin_verify_file(void)
 {
-	unsigned char *w_buffer, *r_buffer;
+	void *w_buffer, *r_buffer;
 	unsigned long w_pos_sector = 0;
 	unsigned char last_complete_percent = -1;
 	unsigned char complete_percent = 0;
@@ -324,8 +327,8 @@ int burnin_verify_file(void)
 		_exit(FUNCTION_FILE_OP_ERROR);
 	}
 
-	w_buffer = (unsigned char *)memalign(512, test_chunk_sector[0]*SECTOR_SIZE);
-	r_buffer = (unsigned char *)memalign(512, test_chunk_sector[0]*SECTOR_SIZE);
+	w_buffer = (void *)memalign(512, test_chunk_sector[0]*SECTOR_SIZE);
+	r_buffer = (void *)memalign(512, test_chunk_sector[0]*SECTOR_SIZE);
 	if((w_buffer == NULL) || (r_buffer == NULL)){		
 		printf("malloc read/write buffer fail\n");
 		ret = 1;
@@ -341,7 +344,7 @@ int burnin_verify_file(void)
 
 	file_size = stat_buf.st_size/SECTOR_SIZE;
 	w_length_sector = test_chunk_sector[0];
-	printf("%s file size is 0x%x sector\n", test_file_name, file_size);
+	printf("%s file size is 0x%lx sector\n", test_file_name, file_size);
 	for(w_pos_sector=0; w_pos_sector<file_size; ){
 		if((w_pos_sector+w_length_sector) > file_size){
 			w_length_sector = file_size - w_pos_sector;
@@ -366,7 +369,7 @@ int burnin_verify_file(void)
 		for(i=0; i<w_length_sector; i++){
 			ret = check_buffer_pattern(r_buffer+SECTOR_SIZE*i, SECTOR_SIZE/4, *(unsigned int *)(r_buffer+SECTOR_SIZE*i));
 			if(ret != 0){
-				printf("Fail address: 0x%x\n", w_pos_sector);
+				printf("Fail address: 0x%lx\n", w_pos_sector);
 				/* data verify fail */
 				goto BURNIN_QUIT;
 			}
@@ -427,6 +430,8 @@ int burnin_sequence_write(int type)
 		printf("malloc read/write buffer fail\n");
 		goto MALLOC_RW_BUFFER;
 	}
+	printf("WBuffer addr: 0x%p\n", w_buffer);
+	printf("RBuffer addr: 0x%p\n", r_buffer);
 
 	srand(time(NULL));
 	for(i=0; i<test_file_sector; i++){
@@ -457,6 +462,17 @@ int burnin_sequence_write(int type)
 				}
 				w_sector_sum = 0;
 				w_time_sum = 0;
+			}
+		}
+
+		if(operation >= 1){
+			if(type == 2){
+				/* Infinited read */
+				operation = 1;
+			}
+			if(type == 3){
+				/* Infinited write */
+				operation = 0;
 			}
 		}
 
@@ -535,7 +551,7 @@ int burnin_sequence_write(int type)
 			for(i=0; i<w_length_sector; i++){
 				status = check_buffer_pattern(r_buffer+SECTOR_SIZE*i, SECTOR_SIZE/4, data_pattern[i+w_pos_sector]);
 				if(status != 0){
-					printf("Fail address: 0x%x\n", w_pos_sector);
+					printf("Fail address: 0x%lx\n", w_pos_sector);
 					/* data verify fail */
 					goto BURNIN_QUIT;
 				}
@@ -804,7 +820,7 @@ int burnin_infinited_write_addr(int type)
 			for(i=0; i<w_length_sector; i++){
 				status = check_buffer_pattern(r_buffer+SECTOR_SIZE*i, SECTOR_SIZE/4, data_pattern[i+w_pos_sector]);
 				if(status != 0){
-					printf("Fail address: 0x%x\n", w_pos_sector);
+					printf("Fail address: 0x%lx\n", w_pos_sector);
 					/* data verify fail */
 					goto BURNIN_QUIT;
 				}
@@ -1020,7 +1036,7 @@ int burnin_infinited_read_addr(int type)
 				for(i=0; i<w_length_sector; i++){
 					status = check_buffer_pattern(r_buffer+SECTOR_SIZE*i, SECTOR_SIZE/4, data_pattern[i+w_pos_sector]);
 					if(status != 0){
-						printf("Fail address: 0x%x\n", w_pos_sector);
+						printf("Fail address: 0x%lx\n", w_pos_sector);
 						/* data verify fail */
 						goto BURNIN_QUIT;
 					}
@@ -1065,7 +1081,7 @@ int burnin_infinited_read_addr(int type)
 			for(i=0; i<w_length_sector; i++){
 				status = check_buffer_pattern(r_buffer+SECTOR_SIZE*i, SECTOR_SIZE/4, data_pattern[i+w_pos_sector]);
 				if(status != 0){
-					printf("Fail address: 0x%x\n", w_pos_sector);
+					printf("Fail address: 0x%lx\n", w_pos_sector);
 					/* data verify fail */
 					goto BURNIN_QUIT;
 				}
@@ -1340,7 +1356,7 @@ int burnin_random_write(int type)
 			for(i=0; i<w_length_sector; i++){
 				status = check_buffer_pattern(r_buffer+SECTOR_SIZE*i, SECTOR_SIZE/4, data_pattern[i+w_pos_sector]);
 				if(status != 0){
-					printf("Fail address: 0x%x\n", w_pos_sector);
+					printf("Fail address: 0x%lx\n", w_pos_sector);
 					/* data verify fail */
 					goto BURNIN_QUIT;
 				}
@@ -1445,13 +1461,13 @@ int main(int argc, char **argv)
 			case 'l':
 			test_time = atoi(optarg);
 			if(optarg[strlen(optarg)-1]=='h' || optarg[strlen(optarg)-1]=='H'){
-				test_chunk_sector[test_chunk_count] *= 60*60;
+				test_time *= 60*60;
 			}
 			if(optarg[strlen(optarg)-1]=='m' || optarg[strlen(optarg)-1]=='M'){
-				test_chunk_sector[test_chunk_count] *= 60;
+				test_time *= 60;
 			}
 			if(optarg[strlen(optarg)-1]=='s' || optarg[strlen(optarg)-1]=='S'){
-				test_chunk_sector[test_chunk_count] *= 1;
+				test_time *= 1;
 			}
 			DBGMSG("test_time: %ld\n", test_time);
 			break;
@@ -1545,6 +1561,14 @@ int main(int argc, char **argv)
 				break;
 			}
 		}
+		break;
+
+		case 5:
+		burnin_sequence_write(2);
+		break;
+
+		case 6:
+		burnin_sequence_write(3);
 		break;
 	}
 #endif
