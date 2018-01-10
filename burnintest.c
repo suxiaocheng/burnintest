@@ -124,10 +124,16 @@ void dump_test_info(void)
 	printf("\tTotal sector read: %lld\n", total_sector_read);
 }
 
+void init_excel(char *name)
+{
+	int fd = open(name, O_CREAT|O_RDWR|O_TRUNC, S_IRWXU);
+	close(fd);
+}
+
 void dump_excel(char *name)
 {
 	int i, j;
-	int fd = open(name, O_CREAT|O_RDWR|O_TRUNC, S_IRWXU);
+	int fd = open(name, O_APPEND|O_RDWR, S_IRWXU);
 	char buff[512];
 	ssize_t bytes_write;
 	int max_unit;
@@ -170,18 +176,14 @@ void dump_excel(char *name)
 	}
 	read_unit = max_unit;
 
-	sprintf(buff, "%ldK write(%s)\n", test_chunk_sector[0]/2, speed_unit_str_list[write_unit]);
-	bytes_write = write(fd, buff, strlen(buff));
-	sprintf(buff, "%ldK,", test_chunk_sector[0]/2);	
+	sprintf(buff, "%ldK Write,", test_chunk_sector[0]/2);	
 	bytes_write = write(fd, buff, strlen(buff));
 	for(i=0; i<sizeof(w_speed)/sizeof(float); i++){
 		sprintf(buff, "%f,", w_speed[i]);
 		bytes_write = write(fd, buff, strlen(buff));
 	}
 
-	sprintf(buff, "\n%ldK read(%s)\n", test_chunk_sector[0]/2, speed_unit_str_list[read_unit]);
-	bytes_write = write(fd, buff, strlen(buff));
-	sprintf(buff, "%ldK,", test_chunk_sector[0]/2);
+	sprintf(buff, "\n%ldK Read,", test_chunk_sector[0]/2);
 	bytes_write = write(fd, buff, strlen(buff));
 	for(i=0; i<sizeof(r_speed)/sizeof(float); i++){
 		sprintf(buff, "%f,", r_speed[i]);
@@ -588,8 +590,7 @@ int burnin_sequence_write(int type)
 		}
 	}
 
-	sprintf(test_result_name, "%s_f_%ld(sector)_c_%ld(sector)%s", TEST_RESULT_NAME, 
-		test_file_sector, test_chunk_sector[0], TEST_RESULT_SUBFIX);
+	sprintf(test_result_name, "%s%s", TEST_RESULT_NAME, TEST_RESULT_SUBFIX);
 	dump_excel(test_result_name);
 
 BURNIN_QUIT:
@@ -861,8 +862,7 @@ int burnin_infinited_write_addr(int type)
 		}
 	}
 
-	sprintf(test_result_name, "%s_f_%ld(sector)_c_%ld(sector)%s", TEST_RESULT_NAME, 
-		test_file_sector, test_chunk_sector[0], TEST_RESULT_SUBFIX);
+	sprintf(test_result_name, "%s%s", TEST_RESULT_NAME, TEST_RESULT_SUBFIX);
 	dump_excel(test_result_name);
 
 BURNIN_QUIT:
@@ -1126,8 +1126,7 @@ int burnin_infinited_read_addr(int type)
 		}
 	}
 
-	sprintf(test_result_name, "%s_f_%ld(sector)_c_%ld(sector)%s", TEST_RESULT_NAME, 
-		test_file_sector, test_chunk_sector[0], TEST_RESULT_SUBFIX);
+	sprintf(test_result_name, "%s%s", TEST_RESULT_NAME, TEST_RESULT_SUBFIX);
 	dump_excel(test_result_name);
 
 BURNIN_QUIT:
@@ -1397,8 +1396,7 @@ int burnin_random_write(int type)
 		}
 	}
 
-	sprintf(test_result_name, "%s_f_%ld(sector)_c_%ld(sector)%s", TEST_RESULT_NAME, 
-		test_file_sector, test_chunk_sector[0], TEST_RESULT_SUBFIX);
+	sprintf(test_result_name, "%s%s", TEST_RESULT_NAME, TEST_RESULT_SUBFIX);
 	dump_excel(test_result_name);
 
 BURNIN_QUIT:
@@ -1554,6 +1552,7 @@ int main(int argc, char **argv)
 
 		case 4:
 		default:
+		init_excel(TEST_RESULT_NAME TEST_RESULT_SUBFIX);
 		for(i=0; i<7; i++){
 			test_chunk_sector[0] = 2<<(2+i);
 			err = burnin_sequence_write(1);
