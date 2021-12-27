@@ -400,7 +400,7 @@ int burnin_sequence_write(int type)
 	unsigned char complete_percent = 0;
 	int fd = open(test_file_name, test_file_open_flag, S_IRWXU);
 	int status;
-	unsigned int w_length_sector;
+	size_t w_length_sector;
 	unsigned int operation = 0;
 	unsigned int tmp;
 
@@ -479,6 +479,8 @@ int burnin_sequence_write(int type)
 		}
 
 		if((operation&0x1) == 0){
+			ssize_t write_length = 0;
+			int retry_times = 0;
 			for(i=0; i<w_length_sector; i++){
 				set_buffer_pattern(w_buffer+SECTOR_SIZE*i, SECTOR_SIZE/4, data_pattern[i+w_pos_sector]);
 			}
@@ -486,17 +488,26 @@ int burnin_sequence_write(int type)
 			
 			gettimeofday(&start_timestamp, NULL);
 
-			status = write(fd, w_buffer, w_length_sector*SECTOR_SIZE);
-			if(status == -1){
-				printf("Write file error\n");
-				DUMP_ERR_INFO();
-				_exit(FUNCTION_FILE_OP_ERROR);
-			}
-			if(status < w_length_sector*SECTOR_SIZE){
-				printf("Write length less than excepted, write %d bytes, except: 0x%d\n", 
-					status, w_length_sector * SECTOR_SIZE);
-				DUMP_ERR_INFO();
-				_exit(FUNCTION_FILE_OP_ERROR);
+			while ( write_length < w_length_sector*SECTOR_SIZE ) {
+				status = write(fd, &w_buffer[write_length], (size_t)w_length_sector*SECTOR_SIZE - write_length);
+				if(status == -1){
+					printf("Write file error\n");
+					DUMP_ERR_INFO();
+					_exit(FUNCTION_FILE_OP_ERROR);
+				}
+				write_length += status;
+				retry_times++;
+				if (retry_times >= 2) {
+					printf("retrying %d write\n", retry_times);
+				}
+				/*
+				if(status < w_length_sector*SECTOR_SIZE){
+					printf("Write length less than excepted, write %d bytes, except: 0x%d\n", 
+						status, w_length_sector * SECTOR_SIZE);
+					DUMP_ERR_INFO();
+					_exit(FUNCTION_FILE_OP_ERROR);
+				}
+				*/
 			}
 			if(test_file_open_flag & O_SYNC){
 				status = fsync(fd);
